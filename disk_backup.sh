@@ -1,0 +1,163 @@
+#!/bin/bash
+
+INFO='\033[1;37m'
+SUCCESS='\033[1;32m'
+WARNING='\033[1;33m'
+ERROR='\033[1;31m'
+RESET='\033[0m'
+
+backup_disk() {
+    local disk="$1"
+    local archive_filename="$2"
+
+    if [[ ! "$archive_filename" =~ \.tar(\.xz|\.gz)?$ ]]; then
+        echo "Error: Unsupported archive type. Please use .tar, .tar.xz, or .tar.gz extension."
+        cleanup
+        exit 1
+    fi
+
+    if [[ -e "$archive_filename" ]]; then
+        echo "Error: File '$archive_filename' already exists. Choose a different filename."
+        cleanup
+        exit 1
+    fi
+
+    working_dir="${archive_filename%%.*}"
+    local extension="${archive_filename##*.}"
+
+    # Create a working directory
+    mkdir -p "$working_dir"
+    cd "$working_dir"
+
+    # Backup partition table to a text file
+    sudo sfdisk -d "$disk" | tee partition_table.dump
+
+    # Create backup images for each partition
+    while read -r part_num fs_type; do
+        local part_name="part${part_num}"
+
+        # Create partclone image for each partition
+        echo -e "\n${INFO}Cloning Partition $part_num${RESET}"
+        sudo partclone."$fs_type" -c -s "$disk$part_num" -o "$part_name".img
+
+        if [ $? -ne 0 ]; then
+            echo -e "${ERROR}Failed to backup Partition $part_num. Exiting...${RESET}"
+            cleanup
+            exit 1
+        fi
+
+        sudo chown $USER:$USER "$part_name".img
+
+    done < <(sudo parted -sm "$disk" print | awk -F: '/^[0-9]/ { print $1,$5 }')
+
+    cd ..
+
+    echo -e "\n${INFO}Creating archive...${RESET}"
+
+    if [ "$extension" == "tar" ]; then
+        tar -cvf "$archive_filename" "$working_dir"
+    elif [ "$extension" == "gz" ]; then
+        tar -cf - "$working_dir" | gzip -v > "$archive_filename"
+    elif [ "$extension" == "xz" ]; then
+        tar -cf - "$working_dir" | xz -T$(nproc) -zv > "$archive_filename"
+    else
+        echo -e "${ERROR}Invalid archive file extension${RESET}"
+        cleanup
+        exit 1
+    fi
+
+    if [ $? -ne 0 ]; then
+        echo -e "${ERROR}Failed to create archive $archive_filename. Exiting...${RESET}"
+        cleanup
+        exit 1
+    fi
+
+    echo -e "${SUCCESS}Succesfully backed up all partitions in $disk to $archive_filename${RESET}\n"
+
+    cleanup
+    exit 0
+}
+
+restore_disk() {
+    local disk="$1"
+    local archive_filename="$2"
+
+    if [[ ! "$archive_filename" =~ \.tar(\.xz|\.gz)?$ ]]; then
+        echo "Error: Unsupported archive type. Please use .tar, .tar.xz, or .tar.gz extension."
+        exit 1
+    fi
+
+    # Display a warning prompt
+    printf "${WARNING}Warning: Restoring data will overwrite existing partitions on $disk. Do you want to continue?${RESET} [y/N]: "
+    read -r answer
+
+    # Check the user's response
+    if [[ "$answer" != "y" ]]; then
+        echo "Restore aborted."
+        exit 0
+    fi
+
+
+    working_dir="${archive_filename%%.*}"
+    local extension="${archive_filename##*.}"
+
+    if [ "$extension" == "tar" ]; then
+        local tar_flags="-xOf"
+    elif [ "$extension" == "gz" ]; then
+        local tar_flags="-xzOf"
+    elif [ "$extension" == "xz" ]; then
+        local tar_flags="-xJOf"
+    else
+        echo -e "${ERROR}Invalid archive file extension${RESET}"
+        exit 1
+    fi
+
+    # Restore partition table
+    tar "$tar_flags" "$archive_filename" "$working_dir"/partition_table.dump | sudo sfdisk "$disk"
+
+    # Restore each partition using partclone images
+    while read -r part_num fs_type; do
+        echo -e "\n${INFO}Restoring Partition $part_num${RESET}"
+        local part_name="part${part_num}"
+
+        tar "$tar_flags" "$archive_filename" "$working_dir"/"$part_name".img | \
+        sudo partclone.restore -o "$disk$part_num"
+
+        if [ $? -ne 0 ]; then
+            echo -e "${ERROR}Failed to restore Partition $part_num. Exiting...${RESET}"
+            exit 1
+        fi
+
+        echo -e "${SUCCESS}Succesfully restored Partition $part_num${RESET}"
+
+    done < <(sudo parted -sm "$disk" print | awk -F: '/^[0-9]/ { print $1 }')
+
+    echo -e "${SUCCESS}Restored all partitions successfully!${RESET}\n"
+    exit 0
+}
+
+# Function to handle SIGTERM
+cleanup() {
+    rm -rf "$working_dir"
+    # Add your cleanup logic here
+    exit 0
+}
+
+# Register the cleanup function to handle SIGTERM
+trap cleanup SIGTERM
+
+# Interface
+if [[ $# -ne 3 ]]; then
+    echo "Usage: $0"
+    echo "backup <disk> <archive_filename>"
+    echo "restore <archive_filename> <disk>"
+    exit 1
+fi
+
+operation="$1"
+
+case "$operation" in
+    "backup") backup_disk "$2" "$3" ;;
+    "restore") restore_disk "$3" "$2" ;;
+    *) echo "Invalid operation: $operation. Use 'backup' or 'restore'" ;;
+esac
