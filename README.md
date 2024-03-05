@@ -12,7 +12,7 @@ Bash wrapper for creating and restoring backups of entire disks (partition table
 
 ## Usage
 ```
-disk-backup.sh <operation> <disk> <archive_filename>
+disk-backup <operation> <disk> <archive_filename>
 ```
 
 ### Operations:
@@ -24,15 +24,15 @@ disk-backup.sh <operation> <disk> <archive_filename>
 
 Create a compressed backup archive:
 ```
-# ./disk-backup.sh backup /dev/sdX backup.tar.xz
+# ./disk-backup backup /dev/sdX backup.tar.xz
 ```
 Create an uncompressed backup archive:
 ```
-# ./disk-backup.sh backup /dev/sdX backup.tar
+# ./disk-backup backup /dev/sdX backup.tar
 ```
 Restore partitions from an archive:
 ```
-# ./disk-backup.sh restore backup.tar /dev/sdX
+# ./disk-backup restore backup.tar /dev/sdX
 ```
 
 ## Prerequisites
@@ -51,7 +51,7 @@ git clone https://github.com/abraarsameer/partclone-disk-backup.git
 ```
 2. Make the script executable:
 ```
-chmod +x disk-backup.sh
+chmod +x disk-backup
 ```
 3. (Optional) Copy/Symlink the script to `/usr/local/bin/` for system-wide access, or to `~/.local/bin/` for local user access.
 

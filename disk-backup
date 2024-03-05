@@ -146,18 +146,26 @@ cleanup() {
 # Register the cleanup function to handle SIGTERM
 trap cleanup SIGTERM
 
-# Interface
+# Usage
 if [[ $# -ne 3 ]]; then
-    echo "Usage: $0"
-    echo "backup <disk> <archive_filename>"
-    echo "restore <archive_filename> <disk>"
+    echo "Usage: disk-backup [-b | -r] [source] [target]"
+    echo ""
+    echo "Supported archive formats: .tar, .tar.gz, .tar.xz"
+    echo ""
+    echo "Usage flags"
+    echo "-b	backup disk to archive"
+    echo "-r	restore archive to disk (use with caution)"
+    echo ""
+    echo "Examples"
+    echo "Backup: disk-backup -b /dev/sdX backup.tar.xz"
+    echo "Restore: disk-backup -r backup.tar.xz /dev/sdX"
     exit 1
 fi
 
 operation="$1"
 
 case "$operation" in
-    "backup") backup_disk "$2" "$3" ;;
-    "restore") restore_disk "$3" "$2" ;;
-    *) echo "Invalid operation: $operation. Use 'backup' or 'restore'" ;;
+    "-b") backup_disk "$2" "$3" ;;
+    "-r") restore_disk "$3" "$2" ;;
+    *) echo "Invalid flag: $operation.'" ;;
 esac
